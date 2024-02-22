@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Convert SAIL to JSON</title>
+</head>
+<body style="font-family: 'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif;">
+  <h1>Convert SAIL to JSON</h1>
+  <input type="file" id="fileInput">
+  <button onclick="convertToJSON()">Convert</button>
+  <br><br>
+  <textarea style="resize: none; width: 90%; height: 70vh;" id="jsonPreview" rows="10" cols="50" readonly></textarea>
+  <br><br>
+  <a id="downloadLink" style="display: none;">Download JSON</a>
+
+  <script>
+    function removeComments(text) {
+      const pattern = /\/\*.*?\*\/|\/\/.*?$/gm;
+      return text.replace(pattern, '');
+    }
+
+    function substringUntilLastOccurrence(inputString, word) {
+      const lastIndex = inputString.lastIndexOf(word);
+      if (lastIndex !== -1) {
+        return inputString.substring(0, lastIndex);
+      } else {
+        return inputString;
+      }
+    }
+
+    function extractInstructionDetails(content) {
+      content = removeComments(content);
+
+      const instructions = {};
+
+      const pattern1 = /mapping\s+(\w+)_mnemonic\s+:\s+(\w+)\s+<->\s+(\w+)\s+=\s+{([^}]*)}/gm;
+      let match;
+      while (match = pattern1.exec(content)) {
+        const name = match[1];
+        const lines = match[4].split("\n").map(line => line.trim());
+        instructions[name] = {};
+        lines.forEach(line => {
+          const parts = line.split("<->");
+          if (parts.length === 2) {
+            const name = parts[0].replace(" ","");
+            const mnemonic = parts[1].replace(",","").replace('"',"").replace(" ","");
+            instructions[name] = { mnemonic };
+          }
+        });
+      }
+
+      const pattern2 = /mapping\s+clause\s+assembly\s*=\s*(\w+)\(.*?\)\s*<->\s*"(\w+)"/gm;
+      while (match = pattern2.exec(content)) {
+        const name = match[1];
+        const mnemonic = match[2];
+        instructions[name] = { mnemonic };
+      }
+
+      for (const name in instructions) {
+        const pattern3 = new RegExp(`mapping clause encdec.*${name}`);
+        match = pattern3.exec(content);
+        if (match) {
+          const encdecBegin = content.indexOf("<->", match.index);
+          const encdecDef = substringUntilLastOccurrence(content.substring(encdecBegin).split("\n")[0].replace("<->", "").replace(" ",""), "@").split("@");
+          instructions[name]["operands"] = encdecDef;
+        }
+      }
+
+      return instructions;
+    }
+
+    function convertToJSON() {
+      const fileInput = document.getElementById('fileInput');
+      const jsonPreview = document.getElementById('jsonPreview');
+      const downloadLink = document.getElementById('downloadLink');
+
+      const file = fileInput.files[0];
+      const reader = new FileReader();
+
+      reader.onload = function(event) {
+        const content = event.target.result;
+        const instructions = extractInstructionDetails(content);
+        const jsonString = JSON.stringify({ instructions }, null, 4);
+
+        jsonPreview.value = jsonString;
+
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        downloadLink.href = url;
+        downloadLink.download = 'instructions.json';
+        downloadLink.style.display = 'block';
+      };
+
+      reader.readAsText(file);
+    }
+  </script>
+</body>
+</html>
